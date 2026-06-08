@@ -25,14 +25,17 @@ BASE_DIR = "/tmp" if os.path.exists("/tmp") else "."
 
 # --- CÁC HÀM XỬ LÝ LOGIC (GIỮ NGUYÊN) ---
 def extract_options_smart(text):
+    """Tách các lựa chọn A, B, C, D từ dòng văn bản"""
     pattern = r"([A-D]|[a-d])[\.\)\:]\s+"
     parts = re.split(pattern, text)
     options = []
     if len(parts) > 2:
         for i in range(1, len(parts), 2):
-            if i + 1 < len(parts): options.append({"label": parts[i].upper(), "content": parts[i+1].strip()})
+            if i + 1 < len(parts):
+                label = parts[i].upper()
+                content = parts[i+1].strip()
+                options.append({"label": label, "content": content})
     return options
-
 def parse_answer_zone(paragraphs):
     """
     Phân tích vùng đáp án để lấy:
@@ -187,62 +190,166 @@ def export_excel(questions, file_path):
         rows.append(row)
     pd.DataFrame(rows, columns=columns).to_excel(file_path, index=False)
 
-def export_word_bold(questions, file_path):
+def export_word_bold(questions):
     doc = Document()
-    doc.styles['Normal'].font.name, doc.styles['Normal'].font.size = 'Times New Roman', Pt(12)
-    doc.add_heading('ĐỀ THI (ĐÁP ÁN IN ĐẬM ĐỎ)', level=0).alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+    style = doc.styles['Normal']
+    font = style.font
+    font.name = 'Times New Roman'
+    font.size = Pt(12)
+    
+    title = doc.add_heading('ĐỀ THI (ĐÁP ÁN IN ĐẬM ĐỎ)', level=0)
+    title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+    
     for q in questions:
         p = doc.add_paragraph()
-        p.add_run(f"Câu {q['id']}: ").bold = True
+        run_idx = p.add_run(f"Câu {q['id']}: ")
+        run_idx.bold = True
         p.add_run(q['text'])
+        
         if q['options']:
+            is_checkbox = (q['type'] == "Checkbox")
             for i, opt in enumerate(q['options']):
-                is_correct = (i + 1) in q['correct_indices']
+                idx_num = i + 1
+                is_correct = idx_num in q['correct_indices']
+                
+                label_char = opt['label']
+                if is_checkbox: label_char = chr(97 + i) + ")" 
+                else: label_char = label_char + "."
+                
                 p_opt = doc.add_paragraph()
                 p_opt.paragraph_format.left_indent = Pt(18)
-                run_l = p_opt.add_run(f"{chr(97+i)+')' if q['type']=='Checkbox' else opt['label']+'.'} ")
-                run_c = p_opt.add_run(f"{opt['content']}")
+                
+                run_label = p_opt.add_run(f"{label_char} ")
+                run_content = p_opt.add_run(f"{opt['content']}")
+                
                 if is_correct:
-                    run_l.bold = run_c.bold = True
-                    run_l.font.color.rgb = run_c.font.color.rgb = RGBColor(255, 0, 0)
+                    run_label.bold = True
+                    run_label.font.color.rgb = RGBColor(255, 0, 0)
+                    run_content.bold = True
+                    run_content.font.color.rgb = RGBColor(255, 0, 0)
     doc.save(file_path)
 
-def export_word_standard(questions, file_path):
+def export_word_standard(questions):
+    """
+    Xuất file Word chuẩn 3 phần:
+    1. Đề thi (chỉ có câu hỏi, options xếp dọc đẹp)
+    2. Bảng đáp án (Grid)
+    3. Lời giải chi tiết
+    """
     doc = Document()
-    doc.styles['Normal'].font.name, doc.styles['Normal'].font.size = 'Times New Roman', Pt(12)
+    # Cấu hình font
+    style = doc.styles['Normal']
+    font = style.font
+    font.name = 'Times New Roman'
+    font.size = Pt(12)
+    
+    # --- PHẦN 1: ĐỀ THI ---
     doc.add_heading('ĐỀ KIỂM TRA', level=0).alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+    doc.add_paragraph("Môn: Tin học | Thời gian: 45 phút").alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+    doc.add_paragraph("_" * 30).alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+    
     for q in questions:
+        # In câu hỏi
         p = doc.add_paragraph()
-        p.add_run(f"Câu {q['id']}: ").bold = True
+        p.paragraph_format.space_after = Pt(6)
+        run_idx = p.add_run(f"Câu {q['id']}: ")
+        run_idx.bold = True
         p.add_run(q['text'])
-        for i, opt in enumerate(q['options']):
-            p_o = doc.add_paragraph()
-            p_o.paragraph_format.left_indent = Pt(24)
-            p_o.add_run(f"{chr(97+i)+')' if q['type']=='Checkbox' else opt['label']+'.'} {opt['content']}")
+        
+        # In options (Luôn xuống dòng cho đẹp - Standard Format)
+        if q['options']:
+            is_checkbox = (q['type'] == "Checkbox")
+            for i, opt in enumerate(q['options']):
+                label_char = opt['label']
+                if is_checkbox: label_char = chr(97 + i) + ")" 
+                else: label_char = label_char + "."
+                
+                p_opt = doc.add_paragraph()
+                p_opt.paragraph_format.left_indent = Pt(24) # Thụt lề sâu hơn tí
+                p_opt.paragraph_format.space_after = Pt(0) # Sát nhau
+                p_opt.add_run(f"{label_char} {opt['content']}")
+        
+        doc.add_paragraph() # Dòng trống giữa các câu
+
+    # Ngắt trang
     doc.add_page_break()
+
+    # --- PHẦN 2: BẢNG ĐÁP ÁN ---
     doc.add_heading('BẢNG ĐÁP ÁN', level=1).alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-    if len(questions) > 0:
-        t = doc.add_table(rows=((len(questions)//5)+(1 if len(questions)%5>0 else 0))*2, cols=5)
-        t.style = 'Table Grid'
+    doc.add_paragraph() # Dòng trống
+    
+    # === SỬA LỖI TẠI ĐÂY ===
+    # Thay vì tạo bảng rồi xóa, ta tính toán số dòng cần thiết TRƯỚC
+    num_q = len(questions)
+    cols = 5 # 5 câu trên 1 dòng
+    
+    if num_q > 0:
+        # Tính số hàng cần thiết (làm tròn lên)
+        rows_needed = (num_q // cols) + (1 if num_q % cols > 0 else 0)
+        
+        # Tạo bảng 1 lần duy nhất với kích thước chuẩn
+        # rows_needed * 2 vì mỗi câu cần 2 dòng: 1 dòng ID câu hỏi, 1 dòng Đáp án
+        table = doc.add_table(rows=rows_needed * 2, cols=cols)
+        table.style = 'Table Grid'
+        
         for idx, q in enumerate(questions):
-            r, c = (idx // 5) * 2, idx % 5
-            t.cell(r, c).text = str(q['id'])
-            t.cell(r, c).paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-            ans_cell = t.cell(r+1, c)
-            ans_text = ",".join([chr(96+i) for i in q['correct_indices']]) if q['type']=="Checkbox" else (['A','B','C','D'][q['correct_indices'][0]-1] if q['correct_indices'] else "")
-            ans_cell.text = ans_text
-            ans_cell.paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+            r = (idx // cols) * 2
+            c = idx % cols
+            
+            # Ô ID câu hỏi
+            cell_id = table.cell(r, c)
+            cell_id.text = str(q['id'])
+            cell_id.paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+            
+            # Ô Đáp án
+            cell_ans = table.cell(r + 1, c)
+            
+            ans_text = ""
+            if q['correct_indices']:
+                labels = ['A', 'B', 'C', 'D']
+                if q['type'] == "Checkbox":
+                    # Với Checkbox, hiển thị các ý ĐÚNG (ví dụ: a,c)
+                    ans_text = ",".join([chr(96 + i) for i in q['correct_indices']])
+                else:
+                    # Trắc nghiệm thường
+                    # Kiểm tra index có hợp lệ không để tránh lỗi list index out of range
+                    if len(q['correct_indices']) > 0:
+                        idx_ans = q['correct_indices'][0] - 1
+                        if 0 <= idx_ans < 4:
+                            ans_text = labels[idx_ans]
+            
+            cell_ans.text = ans_text
+            cell_ans.paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+            
+            # Chỉ format nếu có đáp án
             if ans_text:
-                run = ans_cell.paragraphs[0].runs[0]
-                run.bold = True; run.font.color.rgb = RGBColor(255, 0, 0)
-    doc.add_page_break()
+                run = cell_ans.paragraphs[0].runs[0]
+                run.bold = True
+                run.font.color.rgb = RGBColor(255, 0, 0)
+    else:
+        doc.add_paragraph("Không tìm thấy câu hỏi trắc nghiệm nào.")
+
+    doc.add_paragraph()
+    
+    # --- PHẦN 3: LỜI GIẢI CHI TIẾT ---
     doc.add_heading('LỜI GIẢI CHI TIẾT', level=1).alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+    
+    has_explanation = False
     for q in questions:
-        if q.get('explanation'):
+        if q.get('explanation') and str(q['explanation']).strip():
+            has_explanation = True
             p = doc.add_paragraph()
-            run = p.add_run(f"Câu {q['id']}: ")
-            run.bold = run.italic = True; run.font.color.rgb = RGBColor(0,0,255)
+            p.paragraph_format.space_before = Pt(12)
+            
+            run_h = p.add_run(f"Câu {q['id']}: ")
+            run_h.bold = True
+            run_h.italic = True
+            run_h.font.color.rgb = RGBColor(0, 0, 255) # Màu xanh cho dễ nhìn
+            
             p.add_run(q['explanation'])
+            
+    if not has_explanation:
+        doc.add_paragraph("(Không có lời giải chi tiết được trích xuất)")
     doc.save(file_path)
 
 # --- ENDPOINTS API ---
