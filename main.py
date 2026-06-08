@@ -52,7 +52,8 @@ def parse_answer_zone(paragraphs):
     p_ans_line = re.compile(r"[:\.\·\-\s]*Đáp án\s*[:\.]?\s*(.*)", re.IGNORECASE)
     
     # Regex bắt đầu lời giải
-    p_explain_start = re.compile(r"^(Giải thích|Hướng dẫn|Lời giải)[:\.]?", re.IGNORECASE)
+    # Cho phép các dấu gạch ngang, sao, chấm tròn hoặc khoảng trắng xuất hiện trước chữ Giải thích
+    p_explain_start = re.compile(r"^[\s\-\*\•\+]*?(Giải thích|Hướng dẫn|Lời giải)[:\.]?", re.IGNORECASE)
     
     current_explanation = []
     is_collecting_explanation = False
@@ -122,7 +123,7 @@ def parse_answer_zone(paragraphs):
             if p_explain_start.match(text):
                 is_collecting_explanation = True
                 # Loại bỏ từ khóa "Giải thích:" khỏi nội dung
-                content = re.sub(r"^(Giải thích|Hướng dẫn|Lời giải)[:\.]?\s*", "", text, flags=re.IGNORECASE)
+                content = re.sub(r"^[\s\-\*\•\+]*?(Giải thích|Hướng dẫn|Lời giải)[:\.]?\s*", "", text, flags=re.IGNORECASE)
                 if content: current_explanation.append(content)
             elif is_collecting_explanation:
                 # Nếu đang trong chế độ gom lời giải, và dòng này không phải câu Đáp án trùng lặp
