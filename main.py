@@ -190,43 +190,24 @@ def export_excel(questions, file_path):
         rows.append(row)
     pd.DataFrame(rows, columns=columns).to_excel(file_path, index=False)
 
-def export_word_bold(questions):
+def export_word_bold(questions, file_path):
     doc = Document()
-    style = doc.styles['Normal']
-    font = style.font
-    font.name = 'Times New Roman'
-    font.size = Pt(12)
-    
-    title = doc.add_heading('ĐỀ THI (ĐÁP ÁN IN ĐẬM ĐỎ)', level=0)
-    title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-    
+    doc.styles['Normal'].font.name, doc.styles['Normal'].font.size = 'Times New Roman', Pt(12)
+    doc.add_heading('ĐỀ THI (ĐÁP ÁN IN ĐẬM ĐỎ)', level=0).alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     for q in questions:
         p = doc.add_paragraph()
-        run_idx = p.add_run(f"Câu {q['id']}: ")
-        run_idx.bold = True
+        p.add_run(f"Câu {q['id']}: ").bold = True
         p.add_run(q['text'])
-        
         if q['options']:
-            is_checkbox = (q['type'] == "Checkbox")
             for i, opt in enumerate(q['options']):
-                idx_num = i + 1
-                is_correct = idx_num in q['correct_indices']
-                
-                label_char = opt['label']
-                if is_checkbox: label_char = chr(97 + i) + ")" 
-                else: label_char = label_char + "."
-                
+                is_correct = (i + 1) in q['correct_indices']
                 p_opt = doc.add_paragraph()
                 p_opt.paragraph_format.left_indent = Pt(18)
-                
-                run_label = p_opt.add_run(f"{label_char} ")
-                run_content = p_opt.add_run(f"{opt['content']}")
-                
+                run_l = p_opt.add_run(f"{chr(97+i)+')' if q['type']=='Checkbox' else opt['label']+'.'} ")
+                run_c = p_opt.add_run(f"{opt['content']}")
                 if is_correct:
-                    run_label.bold = True
-                    run_label.font.color.rgb = RGBColor(255, 0, 0)
-                    run_content.bold = True
-                    run_content.font.color.rgb = RGBColor(255, 0, 0)
+                    run_l.bold = run_c.bold = True
+                    run_l.font.color.rgb = run_c.font.color.rgb = RGBColor(255, 0, 0)
     doc.save(file_path)
 
 def export_word_standard(questions):
