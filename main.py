@@ -56,11 +56,11 @@ def parse_answer_zone(paragraphs):
     
     current_explanation = []
     is_collecting_explanation = False
-
+    
     for para in paragraphs:
         text = para.text.strip()
         if not text: continue
-
+        
         # 1. Phát hiện Câu mới trong vùng đáp án
         match_id = p_q_id.match(text)
         if match_id:
@@ -72,12 +72,12 @@ def parse_answer_zone(paragraphs):
             current_id = match_id.group(2)
             is_collecting_explanation = False # Reset trạng thái
             
-            # Nếu dòng này chứa luôn "Đáp án:", xử lý ngay
+            # ĐÃ SỬA: Không dùng 'continue' ở đây nữa để tránh nuốt mất dòng giải thích có chữ Câu X
             if "Đáp án" in text: 
-                pass # Để logic phía dưới xử lý tiếp phần text
+                pass 
             else:
-                continue
-
+                pass # Chuyển tiếp xuống dưới để gom nội dung lời giải
+                
         if current_id:
             # 2. Xử lý dòng Đáp án
             match_ans = p_ans_line.search(text)
@@ -86,29 +86,19 @@ def parse_answer_zone(paragraphs):
                 ans_upper = ans_content.upper()
                 
                 # Checkbox (Đúng/Sai): a) S, b) Đ...
-                # Regex tìm a) Đ hoặc A. ĐÚNG
                 checkbox_matches = re.findall(r"([A-Da-d])[\)\.\:]\s*(?:Đ|TRUE|ĐÚNG|S|FALSE|SAI)", ans_content, re.IGNORECASE)
                 
                 if checkbox_matches:
-                    indices = []
                     mapping = {'A': 1, 'B': 2, 'C': 3, 'D': 4, 'a': 1, 'b': 2, 'c': 3, 'd': 4}
                     
-                    # Logic phức tạp hơn: Phải check xem nó là Đ hay S. 
-                    # Nhưng Quizizz thường chỉ cần biết câu nào là Đáp án đúng.
-                    # Với dạng Đúng/Sai của Quizizz, ta thường không import được trực tiếp logic từng ý.
-                    # Ở đây ta tạm lấy mapping index để phục vụ tô màu Word.
-                    for char in checkbox_matches:
-                         if char.upper() in mapping: indices.append(mapping[char.upper()])
-                    
-                    # Cải tiến: Nếu là dạng a) S, b) Đ -> Ta cần biết ý nào là ĐÚNG (Đ).
                     # Regex tìm cụ thể những ý ĐÚNG
                     true_matches = re.findall(r"([A-Da-d])[\)\.\:]\s*(?:Đ|TRUE|ĐÚNG)", ans_content, re.IGNORECASE)
                     true_indices = []
                     for char in true_matches:
-                        if char.upper() in mapping: true_indices.append(mapping[char.upper()])
-                    
+                        if char.upper() in mapping: 
+                            true_indices.append(mapping[char.upper()])
+                            
                     answer_map[current_id] = sorted(list(set(true_indices))) if true_indices else []
-                    
                 else:
                     # Trắc nghiệm thường: Đáp án: A
                     mc_match = re.search(r"\b([A-D])\b", ans_upper)
@@ -116,23 +106,38 @@ def parse_answer_zone(paragraphs):
                         char = mc_match.group(1)
                         mapping = {'A': 1, 'B': 2, 'C': 3, 'D': 4}
                         answer_map[current_id] = [mapping.get(char, 1)]
-            
-            # 3. Xử lý Lời giải
+                
+                # ĐÃ THÊM: Bật cờ này lên để các dòng chữ tiếp theo tự động biến thành Lời giải chi tiết
+                is_collecting_explanation = True
+                
+                # Nếu dòng này có chữ "Đáp án: A. " rồi phần phía sau là lời giải luôn, ta cắt chữ "Đáp án: A" đi để giữ lại lời giải
+                clean_comment = p_ans_line.sub("", text).strip()
+                # Xóa tiếp chữ đáp án trắc nghiệm thừa kế bên nếu có (Ví dụ xóa chữ "A." hoặc "B.")
+                clean_comment = re.sub(r"^[A-D][\.\)\s]+", "", clean_comment).strip()
+                if clean_comment:
+                    current_explanation.append(clean_comment)
+                continue # Xử lý xong dòng chứa đáp án, nhảy sang dòng tiếp theo
+                        
+            # 3. Xử lý Lời giải (Cho các dòng tiếp theo bên dưới)
             if p_explain_start.match(text):
                 is_collecting_explanation = True
                 # Loại bỏ từ khóa "Giải thích:" khỏi nội dung
                 content = re.sub(r"^(Giải thích|Hướng dẫn|Lời giải)[:\.]?\s*", "", text, flags=re.IGNORECASE)
                 if content: current_explanation.append(content)
             elif is_collecting_explanation:
-                # Nếu đang trong chế độ gom lời giải, và dòng này không phải Câu mới hay Đáp án
+                # Nếu đang trong chế độ gom lời giải, và dòng này không phải câu Đáp án trùng lặp
                 if not match_ans:
-                    current_explanation.append(text)
-    
+                    # Gợi ý làm sạch thêm: Nếu dòng giải thích lặp lại chữ "Câu X: ...", ta cắt bỏ chữ "Câu X:" đi cho đẹp file Word
+                    clean_text = re.sub(r"^(Câu\s+\d+)[:\.]?\s*", "", text, flags=re.IGNORECASE).strip()
+                    if clean_text:
+                        current_explanation.append(clean_text)
+                    
     # Lưu lời giải câu cuối cùng
     if current_id and current_explanation:
         explanation_map[current_id] = "\n".join(current_explanation).strip()
-
+        
     return answer_map, explanation_map
+    
 def parse_docx_split_mode(doc):
     all_paras = doc.paragraphs
     split_index = -1
